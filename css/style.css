@@ -479,44 +479,127 @@ body {
 .progress-counts { font-size: 13px; color: #5f6368; }
 .progress-counts span { margin-right: 16px; }
 
+/* ============================================================
+   Step 4 — Results: summary cards
+   ============================================================ */
 .results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  max-width: 560px;
-  margin: 16px 0 24px;
+  max-width: 360px;
+  margin: 0 0 20px;
 }
 .result-card {
-  padding: 16px;
-  border-radius: 8px;
+  padding: 16px 12px;
+  border-radius: 10px;
   text-align: center;
 }
 .result-card.r-total   { background: #f8f9fa; border: 1px solid #e8eaed; }
 .result-card.r-success { background: #e6f4ea; border: 1px solid #ceead6; }
 .result-card.r-failed  { background: #fce8e6; border: 1px solid #f5c6c2; }
-.result-card.r-demo    { background: #fff8e1; border: 1px solid #ffe082; }
-.result-num   { font-size: 30px; font-weight: 700; margin-bottom: 4px; }
-.result-label { font-size: 12px; color: #5f6368; }
-.result-card.r-total   .result-num { color: #3c4043; }
-.result-card.r-success .result-num { color: #137333; }
-.result-card.r-failed  .result-num { color: #c5221f; }
-.result-card.r-demo    .result-num { color: #b06000; }
 
-.inserted-section { margin-bottom: 20px; }
+.result-num   { font-size: 32px; font-weight: 700; line-height: 1; margin-bottom: 6px; }
+.result-label { font-size: 12px; font-weight: 500; }
 
-.failed-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.failed-header h3 { font-size: 14px; font-weight: 600; color: #c5221f; }
+.result-card.r-total   .result-num   { color: #3c4043; }
+.result-card.r-total   .result-label { color: #5f6368; }
+.result-card.r-success .result-num   { color: #137333; }
+.result-card.r-success .result-label { color: #137333; }
+.result-card.r-failed  .result-num   { color: #c5221f; }
+.result-card.r-failed  .result-label { color: #c5221f; }
 
-.failed-table {
+/* ============================================================
+   Step 4 — Results: status banner
+   ============================================================ */
+.result-banner {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+.banner-success { background: #e6f4ea; color: #137333; border: 1px solid #ceead6; }
+.banner-error   { background: #fce8e6; color: #c5221f; border: 1px solid #f5c6c2; }
+.banner-partial { background: #fff8e1; color: #b06000; border: 1px solid #ffe082; }
+.banner-demo    { background: #e8f0fe; color: #1558d6; border: 1px solid #c5d8f6; }
+
+/* ============================================================
+   Step 4 — Results: failed rows table
+   ============================================================ */
+.failed-section-wrap { margin-top: 4px; }
+
+.failed-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.failed-hdr h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #c5221f;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fail-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  background: #c5221f;
+  color: #fff;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.failed-hint { font-size: 11px; color: #9aa0a6; margin-bottom: 10px; }
+
+.results-status-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
   border: 1px solid #f5c6c2;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
 }
-.failed-table th { background: #fce8e6; padding: 7px 10px; text-align: left; font-weight: 600; border-bottom: 1px solid #f5c6c2; }
-.failed-table td { padding: 6px 10px; border-bottom: 1px solid #fef0ef; }
+.results-status-table thead tr { background: #fce8e6; }
+.results-status-table th {
+  padding: 9px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #c5221f;
+  border-bottom: 2px solid #f5c6c2;
+  white-space: nowrap;
+}
+.results-status-table td { padding: 8px 12px; border-bottom: 1px solid #fef0ef; vertical-align: middle; }
+.results-status-table tr:last-child td { border-bottom: none; }
+.results-status-table tr.res-fail-row:hover td { background: #fff4f3; }
+
+.res-row-num {
+  font-weight: 700;
+  color: #c5221f;
+  text-align: center;
+  width: 52px;
+  font-size: 13px;
+}
+.res-error {
+  color: #c5221f;
+  font-size: 12px;
+  min-width: 160px;
+  max-width: 300px;
+}
+.res-data {
+  color: #5f6368;
+  font-size: 12px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ============================================================
    Footer

@@ -683,84 +683,98 @@ function updateProgress(current, total, label, success, failed) {
 }
 
 function showResults() {
-  const { total, success, failed, failedList, insertedIds } = S.importResults;
-  const isDemo = !isInsideCreator();
+  const { total, success, failed, failedList } = S.importResults;
+  const isDemo   = !isInsideCreator();
 
-  document.getElementById('importProgress').style.display = 'none';
-  document.getElementById('importResults').style.display  = 'block';
+  // Up to 4 mapped columns shown as record preview in the failed table
+  const previewCols = S.excelHeaders.filter(h => S.mapping[h]).slice(0, 4);
 
-  document.getElementById('resultsGrid').innerHTML = `
+  /* ---- Summary cards ---- */
+  const cards = `
     <div class="result-card r-total">
       <div class="result-num">${total}</div>
-      <div class="result-label">Attempted</div>
+      <div class="result-label">Total</div>
     </div>
     <div class="result-card r-success">
       <div class="result-num">${success}</div>
-      <div class="result-label">Inserted</div>
+      <div class="result-label">&#10003; Inserted</div>
     </div>
     <div class="result-card r-failed">
       <div class="result-num">${failed}</div>
-      <div class="result-label">Failed</div>
+      <div class="result-label">&#10007; Failed</div>
     </div>
-    ${isDemo ? `<div class="result-card r-demo">
-      <div class="result-num" style="font-size:18px">Demo</div>
-      <div class="result-label">No real records created</div>
-    </div>` : ''}
   `;
 
-  // Show inserted IDs table when we have real IDs
-  const hasIds = insertedIds.length > 0 && insertedIds.some(r => r.id && !r.id.startsWith('DEMO-'));
-  if (hasIds) {
-    document.getElementById('failedSection').insertAdjacentHTML('beforebegin', `
-      <div class="inserted-section">
-        <div class="failed-header">
-          <h3 style="color:#137333">&#10003; Inserted Records — Creator IDs</h3>
+  /* ---- Status banner ---- */
+  let banner;
+  if (isDemo) {
+    banner = `<div class="result-banner banner-demo">
+      <strong>&#9432; Demo mode</strong> &mdash; no real records were created.
+      Embed this widget inside your Zoho Creator app to perform a live import.
+    </div>`;
+  } else if (failed === 0) {
+    banner = `<div class="result-banner banner-success">
+      <strong>&#10003; All ${total} record${total > 1 ? 's' : ''} inserted</strong>
+      into <em>${esc(S.selectedForm.name)}</em> successfully.
+    </div>`;
+  } else if (success === 0) {
+    banner = `<div class="result-banner banner-error">
+      <strong>&#10007; Import failed</strong> &mdash; all ${total} records could not be inserted.
+      Check the errors below, correct your data and re-import.
+    </div>`;
+  } else {
+    banner = `<div class="result-banner banner-partial">
+      <strong>&#9888; Partial success</strong> &mdash; ${success} record${success > 1 ? 's' : ''} inserted
+      into <em>${esc(S.selectedForm.name)}</em>.
+      ${failed} row${failed > 1 ? 's' : ''} failed &mdash; see below, fix and re-import.
+    </div>`;
+  }
+
+  /* ---- Failed rows detail table ---- */
+  let failedSection = '';
+  if (failedList.length > 0) {
+    const rows = failedList.map(({ rowNum, rawRecord, error }) => `
+      <tr class="res-fail-row">
+        <td class="res-row-num">${rowNum}</td>
+        <td class="res-error">${esc(error)}</td>
+        ${previewCols.map(h => `<td class="res-data" title="${escAttr(rawRecord[h] ?? '')}">${esc(rawRecord[h] ?? '')}</td>`).join('')}
+      </tr>`).join('');
+
+    failedSection = `
+      <div class="failed-section-wrap">
+        <div class="failed-hdr">
+          <h3>&#10007; Failed Rows <span class="fail-count">${failed}</span></h3>
+          <button class="btn-secondary btn-sm" onclick="downloadFailedRecords()">&#8595; Download All Errors</button>
         </div>
+        ${previewCols.length ? `<p class="failed-hint">Showing first ${previewCols.length} column${previewCols.length > 1 ? 's' : ''} for preview — download for full data.</p>` : ''}
         <div class="table-scroll">
-          <table class="failed-table" style="border-color:#ceead6">
+          <table class="results-status-table">
             <thead>
-              <tr style="background:#e6f4ea">
-                <th style="border-color:#ceead6">Row #</th>
-                <th style="border-color:#ceead6">Zoho Creator Record ID</th>
+              <tr>
+                <th>Row #</th>
+                <th>Error</th>
+                ${previewCols.map(h => `<th>${esc(h)}</th>`).join('')}
               </tr>
             </thead>
-            <tbody>
-              ${insertedIds.filter(r => r.id).map(({ rowNum, id }) =>
-                `<tr><td>${rowNum}</td><td style="font-family:monospace;color:#137333">${esc(id)}</td></tr>`
-              ).join('')}
-            </tbody>
+            <tbody>${rows}</tbody>
           </table>
         </div>
-      </div>
-    `);
+      </div>`;
   }
 
-  // Failed records table
-  if (failedList.length > 0) {
-    document.getElementById('failedSection').style.display = 'block';
+  /* ---- Render into #importResults ---- */
+  const el = document.getElementById('importResults');
+  el.innerHTML = `<div class="results-grid">${cards}</div>${banner}${failedSection}`;
+  el.style.display = 'block';
 
-    document.getElementById('failedHead').innerHTML = `<tr>
-      <th>Row #</th>
-      <th>Error</th>
-      ${S.excelHeaders.map(h => `<th>${esc(h)}</th>`).join('')}
-    </tr>`;
+  document.getElementById('importProgress').style.display = 'none';
+  document.getElementById('btnNext').style.display        = 'none';
+  document.getElementById('btnImport').style.display      = 'none';
+  document.getElementById('btnNewImport').style.display   = 'inline-block';
 
-    document.getElementById('failedBody').innerHTML = failedList
-      .map(({ rowNum, rawRecord, error }) => `<tr>
-        <td>${rowNum}</td>
-        <td style="color:#c5221f;min-width:180px">${esc(error)}</td>
-        ${S.excelHeaders.map(h => `<td>${esc(rawRecord[h] ?? '')}</td>`).join('')}
-      </tr>`)
-      .join('');
-  }
-
-  document.getElementById('btnNext').style.display      = 'none';
-  document.getElementById('btnImport').style.display    = 'none';
-  document.getElementById('btnNewImport').style.display = 'inline-block';
-
-  const msg = success > 0
-    ? `${success} record${success > 1 ? 's' : ''} inserted into ${S.selectedForm.name}` + (failed ? `, ${failed} failed` : '')
-    : `All ${total} records failed to insert`;
+  const msg = failed === 0
+    ? `${success} record${success > 1 ? 's' : ''} inserted into ${S.selectedForm.name}`
+    : `${success} inserted, ${failed} failed — see results`;
   toast(msg, success > 0 ? 'ok' : 'err');
 }
 
@@ -846,12 +860,9 @@ function onEnter(n) {
     renderImportWarnings(); // column-level banner
   }
   if (n === 4) {
-    // Clean up any inserted-section left over from a previous run
-    document.querySelectorAll('.inserted-section').forEach(el => el.remove());
-
     document.getElementById('importProgress').style.display = 'block';
     document.getElementById('importResults').style.display  = 'none';
-    document.getElementById('failedSection').style.display  = 'none';
+    document.getElementById('importResults').innerHTML      = '';
     document.getElementById('progressFill').style.width     = '0%';
     document.getElementById('progressLabel').textContent    = 'Ready to import…';
     document.getElementById('progressPct').textContent      = '0%';
