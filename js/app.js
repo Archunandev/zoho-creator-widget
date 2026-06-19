@@ -402,6 +402,8 @@ function cellHtml(ri, header, value) {
     <input class="cell-input${err ? ' cell-error' : ''}"
       type="text"
       value="${escAttr(value)}"
+      data-ri="${ri}"
+      data-header="${escAttr(header)}"
       ${err ? `title="${escAttr(err)}"` : ''}
       onchange="onCellChange(${ri}, ${JSON.stringify(header)}, this)"
       oninput="onCellInput(${ri}, ${JSON.stringify(header)}, this)">
@@ -531,7 +533,23 @@ function renderImportWarnings() {
 /* =================================================================
    VALIDATION
    ================================================================= */
+function flushDOMEdits() {
+  // Sync every visible cell input → S.tableData before reading state.
+  // Without this, if the user edits a cell and immediately clicks Import
+  // (or Validate All), the browser destroys the inputs inside renderDataTable()
+  // before onchange (blur) fires, leaving the old value in S.tableData.
+  document.querySelectorAll('#dataBody .cell-input').forEach(input => {
+    const ri     = Number(input.dataset.ri);
+    const header = input.dataset.header;
+    if (Number.isFinite(ri) && header && S.tableData[ri] !== undefined) {
+      S.tableData[ri][header] = input.value.trim();
+    }
+  });
+}
+
 function validateAll() {
+  flushDOMEdits(); // capture any in-progress edit before re-reading state
+
   S.rowErrors = {};
 
   S.tableData.forEach((record, ri) => {
