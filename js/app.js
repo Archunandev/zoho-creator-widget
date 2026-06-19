@@ -1,7 +1,7 @@
 /* =================================================================
    CONSTANTS
    ================================================================= */
-const MAX_ROWS    = 20000; // hard cap on uploadable rows
+const MAX_ROWS    = 2000;  // hard cap on uploadable rows
 const BATCH_SIZE  = 200;   // rows per batch (Creator UI grouping)
 const CONCURRENCY = 5;     // parallel API calls within each batch
 
