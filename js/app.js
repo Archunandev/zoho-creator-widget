@@ -412,12 +412,31 @@ function cellHtml(ri, header, value) {
 
 /* ---- Cell editing ---- */
 function onCellInput(ri, header, input) {
-  // Clear error highlight immediately as the user starts typing
-  if (input.classList.contains('cell-error')) {
+  // Sync to S.tableData on EVERY keystroke — do not wait for blur (onchange).
+  // Without this, clicking Import or Validate All before blurring a cell
+  // would read the old value from state instead of what's visible on screen.
+  S.tableData[ri][header] = input.value.trim();
+
+  const lnk  = S.mapping[header];
+  const field = lnk ? S.selectedForm.fields.find(f => f.linkName === lnk) : null;
+
+  if (field?.required && !input.value.trim()) {
+    // Required field was just cleared — show error immediately, no need to blur
+    if (!S.rowErrors[ri]) S.rowErrors[ri] = {};
+    S.rowErrors[ri][header] = `${field.label} is required`;
+    input.classList.add('cell-error');
+    input.title = S.rowErrors[ri][header];
+    updateRowWarning(ri);
+    updateValBadge();
+    updateImportButton();
+  } else if (input.classList.contains('cell-error')) {
+    // Value is being filled in — clear error immediately
     input.classList.remove('cell-error');
     input.removeAttribute('title');
     if (S.rowErrors[ri]) delete S.rowErrors[ri][header];
     updateRowWarning(ri);
+    updateValBadge();
+    updateImportButton();
   }
 }
 
@@ -449,6 +468,7 @@ function onCellChange(ri, header, input) {
 
   updateRowWarning(ri);
   updateValBadge();
+  updateImportButton();
 }
 
 /* ---- Row state helpers ---- */
