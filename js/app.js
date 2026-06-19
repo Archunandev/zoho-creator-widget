@@ -617,9 +617,13 @@ function resetToOriginalData() {
 
 function doResetToOriginalData() {
   hidePreImportBar();
-  buildTableData();      // rebuilds S.tableData from S.rawRows (original Excel values)
+  buildTableData();      // restore S.tableData from S.rawRows (original Excel values)
   normalizeDateFields(); // re-apply DD-MMM-YYYY conversion on date columns
-  validateAll();         // re-validate and re-render
+  renderDataTable();     // update DOM with original values BEFORE validateAll()
+                         // validateAll() calls flushDOMEdits() which reads the DOM —
+                         // without this render, flushDOMEdits() would read the stale
+                         // edited inputs and immediately overwrite the restored values.
+  validateAll();         // now safe: DOM already shows original values
   toast('All edits reset to original upload data', 'ok');
 }
 
