@@ -458,8 +458,9 @@ function renderImportWarnings() {
     </div>`);
   }
 
-  el.innerHTML  = parts.join('');
+  el.innerHTML     = parts.join('');
   el.style.display = parts.length ? 'block' : 'none';
+  updateImportButton();
 }
 
 /* =================================================================
@@ -519,13 +520,44 @@ function fieldError(field, value) {
 
 function updateValBadge() {
   const badge    = document.getElementById('validationBadge');
+  const total    = S.tableData.length;
   const errCount = Object.values(S.rowErrors).filter(e => Object.keys(e).length > 0).length;
+  const valid    = total - errCount;
   if (errCount === 0) {
-    badge.textContent = `All ${S.tableData.length} records valid`;
+    badge.textContent = `All ${total} record${total !== 1 ? 's' : ''} valid — ready to import`;
     badge.className   = 'val-badge ok';
-  } else {
-    badge.textContent = `${errCount} row${errCount > 1 ? 's' : ''} with errors`;
+  } else if (valid > 0) {
+    badge.textContent = `${errCount} row${errCount > 1 ? 's' : ''} with errors — ${valid} will import`;
     badge.className   = 'val-badge errors';
+  } else {
+    badge.textContent = `All ${total} rows have errors — fix before importing`;
+    badge.className   = 'val-badge errors';
+  }
+}
+
+function updateImportButton() {
+  const btn = document.getElementById('btnImport');
+  if (!btn || S.step !== 3) return;
+
+  const mappedCount = Object.values(S.mapping).filter(Boolean).length;
+  if (mappedCount === 0) {
+    btn.disabled = true;
+    btn.title    = 'No columns are mapped to form fields — rename column headers to match field names';
+    return;
+  }
+
+  const missingRequired = S.selectedForm
+    ? S.selectedForm.fields
+        .filter(f => f.required && !Object.values(S.mapping).includes(f.linkName))
+        .map(f => f.label)
+    : [];
+
+  if (missingRequired.length > 0) {
+    btn.disabled = true;
+    btn.title    = `Cannot import — required fields not in your file: ${missingRequired.join(', ')}`;
+  } else {
+    btn.disabled = false;
+    btn.title    = '';
   }
 }
 
@@ -566,19 +598,26 @@ function deleteSelectedRows() {
    IMPORT
    ================================================================= */
 async function startImport() {
-  const errorRows = Object.entries(S.rowErrors)
-    .filter(([, e]) => Object.keys(e).length > 0).length;
+  // Always run a fresh full validation pass before import
+  validateAll();
 
-  if (errorRows > 0) {
-    const skip = confirm(
-      `${errorRows} row(s) have validation errors.\n\n` +
-      `Click OK to skip those rows and import the valid records only.\n` +
-      `Click Cancel to go back and fix the errors first.`
-    );
-    if (!skip) return;
+  // Guard: required columns must be mapped (button should already be disabled, this is a safety net)
+  const missingRequired = S.selectedForm.fields
+    .filter(f => f.required && !Object.values(S.mapping).includes(f.linkName))
+    .map(f => f.label);
+  if (missingRequired.length) {
+    toast(`Cannot import — required fields missing from file: ${missingRequired.join(', ')}`, 'err');
+    return;
   }
 
-  // Build Zoho-field-keyed records from Excel-header-keyed tableData
+  // Count rows with validation errors
+  const errorRowIndices = new Set(
+    Object.entries(S.rowErrors)
+      .filter(([, e]) => Object.keys(e).length > 0)
+      .map(([ri]) => Number(ri))
+  );
+
+  // Build Zoho-field-keyed records, skipping any row with validation errors
   const toImport = S.tableData
     .map((rawRecord, ri) => {
       const zohoRecord = {};
@@ -588,10 +627,23 @@ async function startImport() {
       });
       return { zohoRecord, rawRecord, ri };
     })
-    .filter(({ ri }) => !S.rowErrors[ri] || Object.keys(S.rowErrors[ri]).length === 0);
+    .filter(({ ri }) => !errorRowIndices.has(ri));
 
   if (!toImport.length) {
-    toast('No valid records to import.', 'err'); return;
+    toast(
+      errorRowIndices.size > 0
+        ? `All ${S.tableData.length} rows have validation errors — fix them before importing.`
+        : 'No data to import.',
+      'err'
+    );
+    return;
+  }
+
+  if (errorRowIndices.size > 0) {
+    toast(
+      `${errorRowIndices.size} row${errorRowIndices.size > 1 ? 's' : ''} with errors will be skipped — importing ${toImport.length} valid record${toImport.length > 1 ? 's' : ''}.`,
+      'warn'
+    );
   }
 
   goToStep(4);
@@ -905,7 +957,7 @@ function refreshFooter() {
   imp.style.display    = S.step === 3             ? 'inline-block' : 'none';
   newImp.style.display = 'none';
 
-  if (S.step === 3) imp.disabled = false;
+  if (S.step === 3) updateImportButton();
 }
 
 /* =================================================================
