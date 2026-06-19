@@ -510,6 +510,8 @@ body {
 .pib-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .pib-confirm  { background: #34a853 !important; color: #fff !important; }
 .pib-confirm:hover { background: #2d7d46 !important; }
+.pib-reset-confirm { background: #e37400 !important; color: #fff !important; }
+.pib-reset-confirm:hover { background: #b85e00 !important; }
 
 /* Flash animation — briefly highlights first error row when scrolled to */
 @keyframes row-flash {
@@ -787,6 +789,9 @@ body {
 
 .btn-import { background: #34a853; color: #fff; }
 .btn-import:hover:not(:disabled) { background: #2d7d46; }
+
+.btn-reset { background: #fff3e0; color: #e37400; border: 1px solid #ffcc80; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 500; transition: background .15s; }
+.btn-reset:hover { background: #ffe0b2; }
 
 .btn-primary:disabled,
 .btn-secondary:disabled,

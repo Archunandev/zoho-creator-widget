@@ -595,6 +595,34 @@ function clearAllErrors() {
   updateValBadge();
 }
 
+function resetToOriginalData() {
+  // Show an inline confirmation banner instead of a blocking browser confirm()
+  const bar = document.getElementById('preImportBar');
+  bar.innerHTML = `
+    <span class="pib-icon">&#8635;</span>
+    <span class="pib-msg">
+      <strong>Reset all edits?</strong>
+      This will restore every cell to the original uploaded data.
+      Any changes you made will be lost.
+    </span>
+    <span class="pib-actions">
+      <button class="btn-secondary btn-sm" onclick="hidePreImportBar()">Cancel</button>
+      <button class="btn-reset btn-sm pib-reset-confirm" onclick="doResetToOriginalData()">
+        &#8635; Yes, reset all edits
+      </button>
+    </span>
+  `;
+  bar.style.display = 'flex';
+}
+
+function doResetToOriginalData() {
+  hidePreImportBar();
+  buildTableData();      // rebuilds S.tableData from S.rawRows (original Excel values)
+  normalizeDateFields(); // re-apply DD-MMM-YYYY conversion on date columns
+  validateAll();         // re-validate and re-render
+  toast('All edits reset to original upload data', 'ok');
+}
+
 /* =================================================================
    DATE HELPERS
    ================================================================= */
