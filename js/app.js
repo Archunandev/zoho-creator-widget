@@ -455,15 +455,30 @@ function onCellInput(ri, header, input) {
 
 function onCellChange(ri, header, input) {
   const value = input.value.trim();
-  if (input.value !== value) input.value = value; // strip leading/trailing whitespace visually
+  if (input.value !== value) input.value = value;
   S.tableData[ri][header] = value;
 
   const lnk  = S.mapping[header];
   const field = lnk ? S.selectedForm.fields.find(f => f.linkName === lnk) : null;
-  const err   = field ? fieldError(field, value) : null;
 
+  // Auto-convert date to DD-MMM-YYYY on blur (before any further validation)
+  if (field?.type === 'date' && value) {
+    const norm = parseAndFormatDate(value);
+    if (norm && norm !== value) { input.value = norm; S.tableData[ri][header] = norm; }
+  }
+
+  if (field?.unique) {
+    // Changing a unique field affects OTHER rows too (their duplicate errors may
+    // appear or disappear). Run full validateAll() which re-checks every row and
+    // re-renders the table to reflect the updated duplicate state everywhere.
+    validateAll();
+    renderImportWarnings();
+    return;
+  }
+
+  // Non-unique field: fast inline update — no need to re-render the whole table
+  const err = field ? fieldError(field, value) : null;
   if (!S.rowErrors[ri]) S.rowErrors[ri] = {};
-
   if (err) {
     S.rowErrors[ri][header] = err;
     input.classList.add('cell-error');
@@ -472,11 +487,6 @@ function onCellChange(ri, header, input) {
     delete S.rowErrors[ri][header];
     input.classList.remove('cell-error');
     input.removeAttribute('title');
-    // Auto-convert date to DD-MMM-YYYY on blur
-    if (field?.type === 'date' && value) {
-      const norm = parseAndFormatDate(value);
-      if (norm && norm !== value) { input.value = norm; S.tableData[ri][header] = norm; }
-    }
   }
 
   updateRowWarning(ri);
@@ -558,6 +568,30 @@ function renderImportWarnings() {
     </div>`);
   }
 
+  // Duplicate value summary for unique fields
+  const dupItems = S.excelHeaders
+    .filter(h => {
+      const lnk = S.mapping[h];
+      if (!lnk) return false;
+      const field = S.selectedForm.fields.find(f => f.linkName === lnk);
+      return !!field?.unique;
+    })
+    .map(h => {
+      const field    = S.selectedForm.fields.find(f => f.linkName === S.mapping[h]);
+      const dupCount = Object.values(S.rowErrors)
+        .filter(errs => errs[h] && errs[h].startsWith('Duplicate')).length;
+      return dupCount > 0 ? `<strong>${esc(field.label)}</strong>: ${dupCount} row${dupCount > 1 ? 's' : ''}` : null;
+    })
+    .filter(Boolean);
+
+  if (dupItems.length) {
+    parts.push(`<div class="warn-item warn-error warn-dup">
+      <strong>&#9888; Duplicate values found:</strong> ${dupItems.join(' &bull; ')}
+      — duplicates are highlighted in the table below.
+      Remove or edit the duplicate rows before importing.
+    </div>`);
+  }
+
   el.innerHTML     = parts.join('');
   el.style.display = parts.length ? 'block' : 'none';
   updateImportButton();
@@ -585,6 +619,7 @@ function validateAll() {
 
   S.rowErrors = {};
 
+  // Required / type / format validation (per cell)
   S.tableData.forEach((record, ri) => {
     S.excelHeaders.forEach(header => {
       const lnk  = S.mapping[header];
@@ -599,8 +634,49 @@ function validateAll() {
     });
   });
 
+  // Unique-field duplicate validation (cross-row)
+  validateUniqueFields();
+
   renderDataTable();
   updateValBadge();
+  renderImportWarnings(); // refresh duplicate summary banner
+}
+
+/* Check all fields marked unique:true and flag rows with duplicate values */
+function validateUniqueFields() {
+  const uniqueHeaders = S.excelHeaders.filter(h => {
+    const lnk = S.mapping[h];
+    if (!lnk) return false;
+    const field = S.selectedForm.fields.find(f => f.linkName === lnk);
+    return !!field?.unique;
+  });
+
+  for (const header of uniqueHeaders) {
+    const field = S.selectedForm.fields.find(f => f.linkName === S.mapping[header]);
+
+    // Map normalised value → list of rowIndices that hold it
+    const valueMap = {};
+    S.tableData.forEach((record, ri) => {
+      const val = (record[header] ?? '').trim();
+      if (!val) return; // empty → handled by required check
+      const key = val.toLowerCase();
+      if (!valueMap[key]) valueMap[key] = [];
+      valueMap[key].push(ri);
+    });
+
+    // Flag every row that shares a value with at least one other row
+    for (const rows of Object.values(valueMap)) {
+      if (rows.length <= 1) continue;
+      rows.forEach(ri => {
+        if (!S.rowErrors[ri]) S.rowErrors[ri] = {};
+        const others  = rows.filter(r => r !== ri).map(r => `row ${r + 1}`);
+        const preview = others.length > 3
+          ? others.slice(0, 3).join(', ') + ` +${others.length - 3} more`
+          : others.join(', ');
+        S.rowErrors[ri][header] = `Duplicate ${field.label} — also in ${preview}`;
+      });
+    }
+  }
 }
 
 function clearAllErrors() {
@@ -1380,8 +1456,7 @@ function onEnter(n) {
     buildAutoMapping();
     normalizeDateFields();
     hidePreImportBar();
-    validateAll();
-    renderImportWarnings();
+    validateAll(); // calls renderImportWarnings() internally
   }
   if (n === 4) {
     document.getElementById('importProgress').style.display = 'block';

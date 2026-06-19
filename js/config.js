@@ -4,16 +4,17 @@
  * Edit this array to match your Zoho Creator app's forms and fields.
  *
  * Each form object:
- *   id        — unique key used internally (any string)
- *   name      — display name shown in the dropdown
- *   linkName  — the form's link name in Zoho Creator (exact, case-sensitive)
+ *   id          — unique key used internally (any string)
+ *   name        — display name shown in the dropdown
+ *   linkName    — the form's link name in Zoho Creator (exact, case-sensitive)
  *   description — optional short description shown in step 1
- *   fields[]  — list of fields to import into
+ *   fields[]    — list of fields to import into
  *
  * Each field object:
  *   label     — display label shown in the UI
  *   linkName  — the field's link name in Zoho Creator (exact, case-sensitive)
  *   required  — true = validation error if empty
+ *   unique    — true = duplicate values within the uploaded file are flagged as errors
  *   type      — "text" | "email" | "number" | "date" | "url" | "phone"
  */
 const FORM_CONFIG = [
@@ -23,9 +24,9 @@ const FORM_CONFIG = [
     linkName: "Pincode_Master",
     description: "Pincode Master records",
     fields: [
-      { label: "Pincode",   linkName: "Pincode",   required: true,  type: "text"   },
-      { label: "Country",    linkName: "Country",    required: true,  type: "text"   },
-      { label: "District",        linkName: "District",        required: true,  type: "text"  },
+      { label: "Pincode",  linkName: "Pincode",  required: true,  unique: true,  type: "text" },
+      { label: "Country",  linkName: "Country",  required: true,  unique: false, type: "text" },
+      { label: "District", linkName: "District", required: true,  unique: false, type: "text" },
     ]
   }
 ];
