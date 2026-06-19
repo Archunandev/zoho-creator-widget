@@ -73,7 +73,7 @@
             </svg>
           </div>
           <p class="upload-title">Drag &amp; drop your file here</p>
-          <p class="upload-sub">or <button class="link-btn" onclick="document.getElementById('fileInput').click()">browse files</button></p>
+          <p class="upload-sub">or <button class="link-btn" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">browse files</button></p>
           <p class="upload-hint">Supports .xlsx, .xls, .csv &bull; Max 10 MB</p>
         </div>
         <div id="sheetSelectorWrapper" style="display:none" class="sheet-selector">

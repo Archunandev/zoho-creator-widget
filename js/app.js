@@ -101,12 +101,10 @@ function setupUploadZone() {
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   });
-  zone.addEventListener('click', e => {
-    if (e.target.classList.contains('link-btn') || e.target === zone ||
-        e.target.closest('.upload-icon') || e.target.classList.contains('upload-title') ||
-        e.target.classList.contains('upload-sub') || e.target.classList.contains('upload-hint')) {
-      document.getElementById('fileInput').click();
-    }
+  // Clicking anywhere in the zone opens the file dialog.
+  // The "browse files" button uses event.stopPropagation() so it doesn't double-fire here.
+  zone.addEventListener('click', () => {
+    document.getElementById('fileInput').click();
   });
 }
 
