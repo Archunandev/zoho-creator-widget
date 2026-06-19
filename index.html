@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bulk Import Widget</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="widget-container">
+
+    <div class="widget-header">
+      <div>
+        <h1>Bulk Data Import</h1>
+        <p>Upload an Excel file and import records into any Zoho Creator form</p>
+      </div>
+    </div>
+
+    <!-- Step wizard nav -->
+    <div class="steps-nav" id="stepsNav">
+      <div class="step active" data-step="1">
+        <div class="step-bubble">1</div>
+        <div class="step-label">Select Form</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" data-step="2">
+        <div class="step-bubble">2</div>
+        <div class="step-label">Upload File</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" data-step="3">
+        <div class="step-bubble">3</div>
+        <div class="step-label">Preview &amp; Edit</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" data-step="4">
+        <div class="step-bubble">4</div>
+        <div class="step-label">Import</div>
+      </div>
+    </div>
+
+    <!-- Step panels -->
+    <div class="step-content">
+
+      <!-- Step 1: Select Form -->
+      <div class="step-panel active" id="panel1">
+        <div class="panel-header">
+          <h2>Select Target Form</h2>
+          <p>Choose which Zoho Creator form you want to bulk-import data into.</p>
+        </div>
+        <div class="form-select-wrapper">
+          <label for="formSelect">Form</label>
+          <select id="formSelect" onchange="onFormSelect(this.value)">
+            <option value="">-- Choose a form --</option>
+          </select>
+        </div>
+        <div id="formInfo" class="form-info" style="display:none"></div>
+      </div>
+
+      <!-- Step 2: Upload -->
+      <div class="step-panel" id="panel2">
+        <div class="panel-header">
+          <h2>Upload Excel File</h2>
+          <p>The first row of your file should contain column headers. Download the template to get started quickly.</p>
+        </div>
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFileSelect(event)">
+          <div class="upload-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9AA0A6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 16 12 12 8 16"></polyline>
+              <line x1="12" y1="12" x2="12" y2="21"></line>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+            </svg>
+          </div>
+          <p class="upload-title">Drag &amp; drop your file here</p>
+          <p class="upload-sub">or <button class="link-btn" onclick="document.getElementById('fileInput').click()">browse files</button></p>
+          <p class="upload-hint">Supports .xlsx, .xls, .csv &bull; Max 10 MB</p>
+        </div>
+        <div id="sheetSelectorWrapper" style="display:none" class="sheet-selector">
+          <label>Sheet</label>
+          <select id="sheetSelect" onchange="onSheetSelect(this.value)"></select>
+        </div>
+        <div id="filePreview" class="file-preview" style="display:none"></div>
+        <div class="template-row">
+          <button class="btn-secondary btn-sm" onclick="downloadTemplate()">
+            &#8595; Download Template
+          </button>
+          <span class="template-hint">Pre-formatted template for <strong id="templateFormName"></strong></span>
+        </div>
+      </div>
+
+      <!-- Step 3: Preview & Edit -->
+      <div class="step-panel" id="panel3">
+        <div class="panel-header">
+          <h2>Preview &amp; Edit</h2>
+          <p>Review your uploaded data. Click any cell to edit it. Rows with errors are highlighted — fix them before importing.</p>
+        </div>
+        <div id="importWarnings"></div>
+        <div class="table-toolbar">
+          <div class="toolbar-left">
+            <span id="recordCount" class="record-count"></span>
+            <span id="validationBadge" class="val-badge"></span>
+          </div>
+          <div class="toolbar-right">
+            <button class="btn-secondary btn-sm" onclick="validateAll()">Validate All</button>
+            <button class="btn-secondary btn-sm" onclick="clearAllErrors()">Clear Errors</button>
+            <button class="btn-secondary btn-sm" id="btnDeleteRows" onclick="deleteSelectedRows()" disabled>Delete Selected</button>
+          </div>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table" id="dataTable">
+            <thead id="dataHead"></thead>
+            <tbody id="dataBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Step 4: Import Progress & Results -->
+      <div class="step-panel" id="panel4">
+        <div class="panel-header">
+          <h2>Import</h2>
+        </div>
+        <div id="importProgress">
+          <div class="progress-info">
+            <span id="progressLabel">Preparing...</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+          <div id="progressCounts" class="progress-counts"></div>
+        </div>
+        <div id="importResults" style="display:none">
+          <div class="results-grid" id="resultsGrid"></div>
+          <div id="failedSection" style="display:none">
+            <div class="failed-header">
+              <h3>Failed Records</h3>
+              <button class="btn-secondary btn-sm" onclick="downloadFailedRecords()">&#8595; Download Failed</button>
+            </div>
+            <div class="table-scroll">
+              <table class="failed-table">
+                <thead id="failedHead"></thead>
+                <tbody id="failedBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /step-content -->
+
+    <!-- Footer nav -->
+    <div class="widget-footer">
+      <div>
+        <button class="btn-secondary" id="btnBack" onclick="prevStep()" style="display:none">&#8592; Back</button>
+      </div>
+      <div class="footer-right">
+        <button class="btn-primary" id="btnNext" onclick="nextStep()">Next &#8594;</button>
+        <button class="btn-import" id="btnImport" onclick="startImport()" style="display:none">Import Records</button>
+        <button class="btn-secondary" id="btnNewImport" onclick="resetWidget()" style="display:none">&#8635; New Import</button>
+      </div>
+    </div>
+
+  </div><!-- /widget-container -->
+
+  <div id="toast" class="toast"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://js.zohostatic.com/creator/widgets/version/2.0/widgetsdk-min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
