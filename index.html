@@ -107,12 +107,15 @@
             <button class="btn-secondary btn-sm" id="btnDeleteRows" onclick="deleteSelectedRows()" disabled>Delete Selected</button>
           </div>
         </div>
-        <div class="data-table-container">
-          <table class="data-table" id="dataTable">
-            <thead id="dataHead"></thead>
-            <tbody id="dataBody"></tbody>
-          </table>
+        <div class="data-table-wrap">
+          <div class="data-table-container">
+            <table class="data-table" id="dataTable">
+              <thead id="dataHead"></thead>
+              <tbody id="dataBody"></tbody>
+            </table>
+          </div>
         </div>
+        <div id="tablePagination" class="table-pagination" style="display:none"></div>
       </div>
 
       <!-- Step 4: Import Progress & Results -->

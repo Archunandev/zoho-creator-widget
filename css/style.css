@@ -377,11 +377,34 @@ body {
 .val-badge.errors { background: #fdecea; color: #c5221f; }
 .val-badge.ok     { background: #e6f4ea; color: #1e7e34; }
 
+/* Wrap holds the container + scroll-edge shadows */
+.data-table-wrap {
+  position: relative;
+}
+/* Right-edge shadow — visible when there are columns to the right */
+.data-table-wrap::after,
+.data-table-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 16px; /* leave room above scrollbar */
+  width: 36px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s;
+  z-index: 20;
+  border-radius: 8px;
+}
+.data-table-wrap::after  { right: 0; background: linear-gradient(to right, transparent, rgba(0,0,0,.12)); border-radius: 0 8px 0 0; }
+.data-table-wrap::before { left: 0;  background: linear-gradient(to left,  transparent, rgba(0,0,0,.08)); border-radius: 8px 0 0 0; }
+.data-table-wrap.shadow-right::after  { opacity: 1; }
+.data-table-wrap.shadow-left::before  { opacity: 1; }
+
 .data-table-container {
   border: 1px solid #e8eaed;
   border-radius: 8px;
   overflow: auto;
-  max-height: 440px;
+  max-height: clamp(300px, calc(100vh - 320px), 800px);
 }
 
 .data-table {
@@ -416,15 +439,69 @@ body {
 .data-table tr.row-success   td { background: #f6fef7; }
 .data-table tr.row-failed    td { background: #fef2f2; }
 
-/* Sticky first two columns */
+/* ── Frozen columns: checkbox (36px) | row# (40px) | status (36px) ── */
 .data-table th:nth-child(1),
-.data-table td:nth-child(1) { position: sticky; left: 0; background: inherit; z-index: 5; }
 .data-table th:nth-child(2),
-.data-table td:nth-child(2) { position: sticky; left: 36px; background: inherit; z-index: 5; }
+.data-table th:nth-child(3),
+.data-table td:nth-child(1),
+.data-table td:nth-child(2),
+.data-table td:nth-child(3) { position: sticky; z-index: 4; }
 
-.check-col { width: 36px; text-align: center; padding: 0 6px !important; }
-.row-num   { width: 40px; text-align: center; color: #9aa0a6; font-size: 12px; }
+.data-table th:nth-child(1), .data-table td:nth-child(1) { left: 0;    }
+.data-table th:nth-child(2), .data-table td:nth-child(2) { left: 36px; }
+.data-table th:nth-child(3), .data-table td:nth-child(3) { left: 76px; }
+
+/* Corner cells need z-index above the sticky header (10) */
+.data-table thead th:nth-child(1),
+.data-table thead th:nth-child(2),
+.data-table thead th:nth-child(3) { z-index: 12; }
+
+/* Frozen cells must have opaque backgrounds — cannot use 'inherit' because
+   <tr> backgrounds are transparent and the row-color rules target <td>. */
+.data-table tbody td:nth-child(1),
+.data-table tbody td:nth-child(2),
+.data-table tbody td:nth-child(3) { background: #fff; }
+
+.data-table tr.row-has-error td:nth-child(1),
+.data-table tr.row-has-error td:nth-child(2),
+.data-table tr.row-has-error td:nth-child(3) { background: #fff8f7; }
+
+.data-table tr:hover td:nth-child(1),
+.data-table tr:hover td:nth-child(2),
+.data-table tr:hover td:nth-child(3) { background: #fafafa; }
+
+.data-table tr.row-selected td:nth-child(1),
+.data-table tr.row-selected td:nth-child(2),
+.data-table tr.row-selected td:nth-child(3) { background: #eef4fd; }
+
+.data-table tr.row-success td:nth-child(1),
+.data-table tr.row-success td:nth-child(2),
+.data-table tr.row-success td:nth-child(3) { background: #f6fef7; }
+
+.data-table tr.row-failed td:nth-child(1),
+.data-table tr.row-failed td:nth-child(2),
+.data-table tr.row-failed td:nth-child(3) { background: #fef2f2; }
+
+/* Thin divider after the last frozen column */
+.data-table th:nth-child(3),
+.data-table td:nth-child(3) { border-right: 1px solid #e8eaed; }
+
+.check-col  { width: 36px; text-align: center; padding: 0 6px !important; }
+.row-num    { width: 40px; text-align: center; color: #9aa0a6; font-size: 12px; }
 .status-col { width: 36px; text-align: center; font-size: 15px; }
+
+/* ── Pagination bar ── */
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 4px;
+  font-size: 13px;
+  color: #5f6368;
+}
+.page-info    { flex: 1; text-align: center; }
+.page-counter { margin-left: 8px; color: #9aa0a6; font-size: 12px; }
 
 .cell-wrap { position: relative; }
 

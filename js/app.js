@@ -16,6 +16,8 @@ const S = {
   selectedRows:  new Set(),
   importResults: null,
   isImporting:   false,
+  page:          0,
+  pageSize:      200,
 };
 
 /* =================================================================
@@ -225,6 +227,7 @@ function buildTableData() {
   S.rowErrors   = {};
   S.rowStatus   = {};
   S.selectedRows = new Set();
+  S.page         = 0;
 }
 
 /* ---- Header rename ---- */
@@ -254,24 +257,32 @@ function onHeaderChange(colIdx, newName) {
   renderImportWarnings();
 }
 
-/* ---- Table render ---- */
+/* ---- Table render (paginated) ---- */
 function renderDataTable() {
-  const headers = S.excelHeaders;
-  const colSpan = headers.length + 3; // check + # + status + data cols
+  const headers  = S.excelHeaders;
+  const total    = S.tableData.length;
+  const maxPg    = Math.max(0, Math.ceil(total / S.pageSize) - 1);
+  if (S.page > maxPg) S.page = maxPg; // guard if rows were deleted
 
-  // Head
+  const start    = S.page * S.pageSize;
+  const end      = Math.min(start + S.pageSize, total);
+  const colSpan  = headers.length + 3;
+
+  // Head — no inline z-index; CSS handles sticky corners
   document.getElementById('dataHead').innerHTML = `<tr>
-    <th class="check-col" style="z-index:15">
+    <th class="check-col">
       <input type="checkbox" id="checkAll" onchange="toggleAll(this.checked)">
     </th>
-    <th class="row-num" style="z-index:15">#</th>
+    <th class="row-num">#</th>
     <th class="status-col">&#10003;</th>
     ${headers.map((h, ci) => headerThHtml(h, ci)).join('')}
   </tr>`;
 
-  // Body
+  // Body — only render current page slice
   let html = '';
-  S.tableData.forEach((record, ri) => {
+  for (let localIdx = 0; localIdx < end - start; localIdx++) {
+    const ri     = start + localIdx;
+    const record = S.tableData[ri];
     const errors = S.rowErrors[ri] || {};
     const hasErr = Object.keys(errors).length > 0;
     const st     = S.rowStatus[ri];
@@ -292,7 +303,6 @@ function renderDataTable() {
       ${headers.map(h => cellHtml(ri, h, record[h] ?? '')).join('')}
     </tr>`;
 
-    // Inline warning row — shown only when there are errors
     if (hasErr) {
       const tags = Object.entries(errors)
         .map(([h, msg]) => `<span class="row-warn-tag"><strong>${esc(h)}:</strong> ${esc(msg)}</span>`)
@@ -305,11 +315,60 @@ function renderDataTable() {
         </td>
       </tr>`;
     }
-  });
+  }
 
   document.getElementById('dataBody').innerHTML = html;
+  renderPagination(start, end, total);
   updateRecordCount();
   updateValBadge();
+  setupScrollShadow();
+}
+
+function renderPagination(start, end, total) {
+  const pg = document.getElementById('tablePagination');
+  if (!pg) return;
+  const totalPgs = Math.ceil(total / S.pageSize);
+  if (totalPgs <= 1) { pg.style.display = 'none'; return; }
+
+  const canPrev = S.page > 0;
+  const canNext = S.page < totalPgs - 1;
+
+  pg.style.display = 'flex';
+  pg.innerHTML = `
+    <button class="btn-secondary btn-sm" onclick="prevPage()" ${canPrev ? '' : 'disabled'}>&#8592; Prev</button>
+    <span class="page-info">Rows ${start + 1}–${end} of ${total}
+      <span class="page-counter">Page ${S.page + 1} / ${totalPgs}</span>
+    </span>
+    <button class="btn-secondary btn-sm" onclick="nextPage()" ${canNext ? '' : 'disabled'}>Next &#8594;</button>
+  `;
+}
+
+function prevPage() {
+  if (S.page > 0) { S.page--; renderDataTable(); document.querySelector('.data-table-container').scrollTop = 0; }
+}
+function nextPage() {
+  if (S.page < Math.ceil(S.tableData.length / S.pageSize) - 1) {
+    S.page++;
+    renderDataTable();
+    document.querySelector('.data-table-container').scrollTop = 0;
+  }
+}
+
+function setupScrollShadow() {
+  const wrap = document.querySelector('.data-table-wrap');
+  const c    = document.querySelector('.data-table-container');
+  if (!wrap || !c) return;
+  const update = () => {
+    const atRight = c.scrollLeft >= c.scrollWidth - c.clientWidth - 2;
+    const atLeft  = c.scrollLeft <= 2;
+    wrap.classList.toggle('shadow-right', !atRight && c.scrollWidth > c.clientWidth + 4);
+    wrap.classList.toggle('shadow-left',  !atLeft);
+  };
+  if (c._scrollShadow) c.removeEventListener('scroll', c._scrollShadow);
+  c._scrollShadow = update;
+  c.addEventListener('scroll', update, { passive: true });
+  // re-check after paint (column widths settle after render)
+  requestAnimationFrame(update);
 }
 
 function headerThHtml(h, colIdx) {
@@ -362,6 +421,7 @@ function onCellInput(ri, header, input) {
 
 function onCellChange(ri, header, input) {
   const value = input.value.trim();
+  if (input.value !== value) input.value = value; // strip leading/trailing whitespace visually
   S.tableData[ri][header] = value;
 
   const lnk  = S.mapping[header];
@@ -671,6 +731,7 @@ function deleteSelectedRows() {
   S.rowErrors   = {};
   S.rowStatus   = {};
   S.selectedRows = new Set();
+  S.page         = 0;
   validateAll();
   toast(`Deleted ${toRemove.length} row${toRemove.length > 1 ? 's' : ''}`, 'ok');
 }
