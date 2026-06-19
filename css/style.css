@@ -601,82 +601,125 @@ body {
 .banner-demo    { background: #e8f0fe; color: #1558d6; border: 1px solid #c5d8f6; }
 
 /* ============================================================
-   Step 4 — Results: failed rows table
+   Step 4 — Results: inserted + failed sections
    ============================================================ */
-.failed-section-wrap { margin-top: 4px; }
+.res-section {
+  border: 1px solid #e8eaed;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+.res-ins-section  { border-color: #ceead6; }
+.res-fail-section { border-color: #f5c6c2; }
 
-.failed-hdr {
+.res-section-hdr {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  padding: 10px 14px;
 }
-.failed-hdr h3 {
+.res-ins-section  .res-section-hdr { background: #e6f4ea; }
+.res-fail-section .res-section-hdr { background: #fce8e6; }
+
+.res-section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #c5221f;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
-.fail-count {
+.res-title-ins  { color: #137333; }
+.res-title-fail { color: #c5221f; }
+
+.res-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 22px;
   height: 22px;
-  padding: 0 5px;
-  background: #c5221f;
-  color: #fff;
+  padding: 0 6px;
   border-radius: 11px;
   font-size: 11px;
   font-weight: 700;
+  color: #fff;
+}
+.res-badge-ins  { background: #137333; }
+.res-badge-fail { background: #c5221f; }
+
+.failed-hint { font-size: 11px; color: #9aa0a6; margin: 6px 14px 0; }
+
+/* Scrollable table area — keeps both sections visible at once */
+.res-table-scroll {
+  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
 }
 
-.failed-hint { font-size: 11px; color: #9aa0a6; margin-bottom: 10px; }
-
+/* Shared table styles */
 .results-status-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  border: 1px solid #f5c6c2;
-  border-radius: 8px;
-  overflow: hidden;
 }
-.results-status-table thead tr { background: #fce8e6; }
 .results-status-table th {
-  padding: 9px 12px;
+  position: sticky;
+  top: 0;
+  padding: 8px 12px;
   text-align: left;
   font-weight: 600;
-  color: #c5221f;
-  border-bottom: 2px solid #f5c6c2;
   white-space: nowrap;
+  border-bottom: 2px solid;
+  z-index: 2;
 }
-.results-status-table td { padding: 8px 12px; border-bottom: 1px solid #fef0ef; vertical-align: middle; }
+.results-status-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid;
+  vertical-align: middle;
+}
 .results-status-table tr:last-child td { border-bottom: none; }
-.results-status-table tr.res-fail-row:hover td { background: #fff4f3; }
 
+/* Inserted table — green theme */
+.res-ins-table th { background: #e6f4ea; color: #137333; border-color: #ceead6; }
+.res-ins-table td { border-color: #eaf5eb; }
+.res-ins-row:hover td { background: #f0faf1; }
+
+/* Failed table — red theme */
+.res-fail-table th { background: #fce8e6; color: #c5221f; border-color: #f5c6c2; }
+.res-fail-table td { border-color: #fef0ef; }
+.res-fail-row:hover td { background: #fff4f3; }
+
+/* Cell types */
 .res-row-num {
   font-weight: 700;
-  color: #c5221f;
   text-align: center;
-  width: 52px;
+  width: 48px;
   font-size: 13px;
+  color: #5f6368;
+}
+.res-id {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #137333;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .res-error {
-  color: #c5221f;
   font-size: 12px;
-  min-width: 160px;
-  max-width: 300px;
+  color: #c5221f;
+  min-width: 140px;
+  max-width: 260px;
 }
 .res-data {
-  color: #5f6368;
   font-size: 12px;
+  color: #5f6368;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* keep the old alias for fail-count (used in badge) */
+.fail-count { background: #c5221f; }
 
 /* ============================================================
    Footer

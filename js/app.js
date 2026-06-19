@@ -813,7 +813,7 @@ async function startImport() {
       S.rowStatus[ri] = 'success';
       // V2 response: { code: 3000, data: { ID: "..." }, message: "success" }
       const newId = result?.data?.ID || result?.data?.id || null;
-      insertedIds.push({ ri, rowNum: ri + 1, id: newId });
+      insertedIds.push({ ri, rowNum: ri + 1, id: newId, rawRecord });
     } catch (err) {
       failed++;
       S.rowStatus[ri] = 'failed';
@@ -882,17 +882,17 @@ function updateProgress(current, total, label, success, failed) {
 }
 
 function showResults() {
-  const { total, success, failed, failedList } = S.importResults;
-  const isDemo   = !isInsideCreator();
+  const { total, success, failed, failedList, insertedIds } = S.importResults;
+  const isDemo = !isInsideCreator();
 
-  // Up to 4 mapped columns shown as record preview in the failed table
-  const previewCols = S.excelHeaders.filter(h => S.mapping[h]).slice(0, 4);
+  // First 3 mapped columns as row-level context in both tables
+  const previewCols = S.excelHeaders.filter(h => S.mapping[h]).slice(0, 3);
 
-  /* ---- Summary cards ---- */
+  /* ── Summary cards ── */
   const cards = `
     <div class="result-card r-total">
       <div class="result-num">${total}</div>
-      <div class="result-label">Total</div>
+      <div class="result-label">Attempted</div>
     </div>
     <div class="result-card r-success">
       <div class="result-num">${success}</div>
@@ -901,15 +901,14 @@ function showResults() {
     <div class="result-card r-failed">
       <div class="result-num">${failed}</div>
       <div class="result-label">&#10007; Failed</div>
-    </div>
-  `;
+    </div>`;
 
-  /* ---- Status banner ---- */
+  /* ── Status banner ── */
   let banner;
   if (isDemo) {
     banner = `<div class="result-banner banner-demo">
-      <strong>&#9432; Demo mode</strong> &mdash; no real records were created.
-      Embed this widget inside your Zoho Creator app to perform a live import.
+      <strong>&#9432; Demo mode</strong> — no real records were created.
+      Embed this widget inside Zoho Creator to perform a live import.
     </div>`;
   } else if (failed === 0) {
     banner = `<div class="result-banner banner-success">
@@ -918,52 +917,86 @@ function showResults() {
     </div>`;
   } else if (success === 0) {
     banner = `<div class="result-banner banner-error">
-      <strong>&#10007; Import failed</strong> &mdash; all ${total} records could not be inserted.
-      Check the errors below, correct your data and re-import.
+      <strong>&#10007; Import failed</strong> — all ${total} records could not be inserted.
+      Fix the errors below and re-import.
     </div>`;
   } else {
     banner = `<div class="result-banner banner-partial">
-      <strong>&#9888; Partial success</strong> &mdash; ${success} record${success > 1 ? 's' : ''} inserted
-      into <em>${esc(S.selectedForm.name)}</em>.
-      ${failed} row${failed > 1 ? 's' : ''} failed &mdash; see below, fix and re-import.
+      <strong>&#9888; Partial import</strong> — ${success} inserted, ${failed} failed.
+      Fix the failed rows below and re-import them.
     </div>`;
   }
 
-  /* ---- Failed rows detail table ---- */
-  let failedSection = '';
-  if (failedList.length > 0) {
-    const rows = failedList.map(({ rowNum, rawRecord, error }) => `
-      <tr class="res-fail-row">
+  /* ── Inserted records table ── */
+  let insertedSection = '';
+  if (insertedIds.length > 0) {
+    const colHdrs = previewCols.map(h => `<th>${esc(h)}</th>`).join('');
+    const rows = insertedIds.map(({ rowNum, id, rawRecord }) => `
+      <tr class="res-ins-row">
         <td class="res-row-num">${rowNum}</td>
-        <td class="res-error">${esc(error)}</td>
-        ${previewCols.map(h => `<td class="res-data" title="${escAttr(rawRecord[h] ?? '')}">${esc(rawRecord[h] ?? '')}</td>`).join('')}
+        <td class="res-id">${esc(id || '—')}</td>
+        ${previewCols.map(h => `<td class="res-data" title="${escAttr(rawRecord[h] ?? '')}">${esc(truncate(rawRecord[h] ?? '', 28))}</td>`).join('')}
       </tr>`).join('');
 
-    failedSection = `
-      <div class="failed-section-wrap">
-        <div class="failed-hdr">
-          <h3>&#10007; Failed Rows <span class="fail-count">${failed}</span></h3>
-          <button class="btn-secondary btn-sm" onclick="downloadFailedRecords()">&#8595; Download All Errors</button>
+    insertedSection = `
+      <div class="res-section res-ins-section">
+        <div class="res-section-hdr">
+          <span class="res-section-title res-title-ins">
+            &#10003; Inserted
+            <span class="res-badge res-badge-ins">${success}</span>
+          </span>
+          <button class="btn-secondary btn-sm" onclick="downloadInsertedRecords()">&#8595; Download with IDs</button>
         </div>
-        ${previewCols.length ? `<p class="failed-hint">Showing first ${previewCols.length} column${previewCols.length > 1 ? 's' : ''} for preview — download for full data.</p>` : ''}
-        <div class="table-scroll">
-          <table class="results-status-table">
-            <thead>
-              <tr>
-                <th>Row #</th>
-                <th>Error</th>
-                ${previewCols.map(h => `<th>${esc(h)}</th>`).join('')}
-              </tr>
-            </thead>
+        <div class="res-table-scroll">
+          <table class="results-status-table res-ins-table">
+            <thead><tr>
+              <th>Row #</th>
+              <th>Creator Record ID</th>
+              ${colHdrs}
+            </tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
       </div>`;
   }
 
-  /* ---- Render into #importResults ---- */
+  /* ── Failed records table ── */
+  let failedSection = '';
+  if (failedList.length > 0) {
+    const colHdrs = previewCols.map(h => `<th>${esc(h)}</th>`).join('');
+    const rows = failedList.map(({ rowNum, rawRecord, error }) => `
+      <tr class="res-fail-row">
+        <td class="res-row-num">${rowNum}</td>
+        <td class="res-error">${esc(error)}</td>
+        ${previewCols.map(h => `<td class="res-data" title="${escAttr(rawRecord[h] ?? '')}">${esc(truncate(rawRecord[h] ?? '', 28))}</td>`).join('')}
+      </tr>`).join('');
+
+    failedSection = `
+      <div class="res-section res-fail-section">
+        <div class="res-section-hdr">
+          <span class="res-section-title res-title-fail">
+            &#10007; Failed
+            <span class="res-badge res-badge-fail">${failed}</span>
+          </span>
+          <button class="btn-secondary btn-sm" onclick="downloadFailedRecords()">&#8595; Download Errors</button>
+        </div>
+        <p class="failed-hint">Fix these rows and re-import.</p>
+        <div class="res-table-scroll">
+          <table class="results-status-table res-fail-table">
+            <thead><tr>
+              <th>Row #</th>
+              <th>Error</th>
+              ${colHdrs}
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  /* ── Render ── */
   const el = document.getElementById('importResults');
-  el.innerHTML = `<div class="results-grid">${cards}</div>${banner}${failedSection}`;
+  el.innerHTML = `<div class="results-grid">${cards}</div>${banner}${insertedSection}${failedSection}`;
   el.style.display = 'block';
 
   document.getElementById('importProgress').style.display = 'none';
@@ -1011,6 +1044,23 @@ function downloadTemplate() {
 /* =================================================================
    DOWNLOAD FAILED RECORDS
    ================================================================= */
+function downloadInsertedRecords() {
+  const { insertedIds } = S.importResults;
+  if (!insertedIds.length) return;
+
+  const headers = ['Row Number', 'Creator Record ID', ...S.excelHeaders];
+  const rows    = insertedIds.map(({ rowNum, id, rawRecord }) =>
+    [rowNum, id || '', ...S.excelHeaders.map(h => rawRecord[h] ?? '')]
+  );
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws['!cols'] = headers.map(() => ({ wch: 22 }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Inserted Records');
+  XLSX.writeFile(wb, `inserted_records_${Date.now()}.xlsx`);
+  toast('Inserted records downloaded', 'ok');
+}
+
 function downloadFailedRecords() {
   const { failedList } = S.importResults;
   if (!failedList.length) return;
@@ -1147,6 +1197,7 @@ function esc(s) {
 }
 
 function escAttr(s) { return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function truncate(s, n) { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + '…' : s; }
 
 let _toastTimer;
 function toast(msg, type = '') {
