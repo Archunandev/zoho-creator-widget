@@ -28,22 +28,27 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initZohoSDK() {
-  if (typeof ZOHO === 'undefined' || !ZOHO.CREATOR) {
-    S.appLinkName = '__dev__';
-    console.warn('[BulkImport] ZOHO SDK not found — running in demo mode');
+  // V2 SDK auto-initializes via postMessage with the Creator parent iframe.
+  // ZOHO.CREATOR.init() does NOT exist in V2 — calling it would throw.
+  // ZOHO.CREATOR.DATA.addRecords() waits internally for the SDK Load event.
+  if (typeof ZOHO === 'undefined' || !ZOHO.CREATOR || !ZOHO.CREATOR.DATA) {
+    console.warn('[BulkImport] ZOHO V2 SDK not found — demo mode');
     return;
   }
+  console.log('[BulkImport] ZOHO V2 SDK loaded | in Creator iframe:', isInsideCreator());
+}
 
-  // V2 SDK: init() is technically optional but still gives us appLinkName
-  ZOHO.CREATOR.init()
-    .then(cfg => {
-      S.appLinkName = cfg.appLinkName || '__dev__';
-      console.log('[BulkImport] Initialized — app:', S.appLinkName, '| user:', cfg.loginUser || 'unknown');
-    })
-    .catch(err => {
-      console.warn('[BulkImport] init() failed, using demo mode:', err);
-      S.appLinkName = '__dev__';
-    });
+// Creator injects a `serviceOrigin` query param when embedding the widget.
+// That is the reliable signal that we are running inside a live Creator app.
+function isInsideCreator() {
+  try {
+    if (typeof ZOHO === 'undefined' || !ZOHO.CREATOR || !ZOHO.CREATOR.DATA) return false;
+    const params = new URLSearchParams(window.location.search);
+    // serviceOrigin = Creator injects this; also check iframe context as a fallback
+    return params.has('serviceOrigin') || window.self !== window.top;
+  } catch (e) {
+    return false;
+  }
 }
 
 function populateFormSelector() {
@@ -630,48 +635,38 @@ async function startImport() {
 }
 
 /* -----------------------------------------------------------------
-   callAddRecord — uses Zoho Creator JS API v2
-   ZOHO.CREATOR.DATA.addRecords({
-     app_name   : "app_link_name",   // optional — same-app widgets can omit
-     form_name  : "form_link_name",
-     payload    : { data: { field_link: value, ... } }
-   })
-   Success: response.code === 3000
+   callAddRecord — Zoho Creator JS API v2
+   SDK: ZOHO.CREATOR.DATA.addRecords(config)
+   Config: { form_name, payload: { data: { Field_Link: value } } }
+   workspace_name and app_name are auto-filled by the V2 SDK from
+   initParams it receives from the Creator parent iframe.
+   Success response: { code: 3000, data: { ID: "..." }, message: "success" }
    ----------------------------------------------------------------- */
 async function callAddRecord(zohoRecord) {
-  const isDemoMode =
-    !S.appLinkName ||
-    S.appLinkName === '__dev__' ||
-    typeof ZOHO === 'undefined' ||
-    !ZOHO.CREATOR ||
-    !ZOHO.CREATOR.DATA;
-
-  if (isDemoMode) {
+  if (!isInsideCreator()) {
+    // Running on localhost / GitHub Pages — simulate the API
     await sleep(60 + Math.random() * 80);
     if (Math.random() < 0.04) throw new Error('Simulated API error (demo mode)');
-    // Return a fake response matching the v2 shape
     return { code: 3000, data: { ID: 'DEMO-' + Math.random().toString(36).slice(2, 9) }, message: 'success' };
   }
 
+  // workspace_name and app_name intentionally omitted —
+  // the V2 SDK fills them automatically from the Creator iframe context
   const config = {
     form_name: S.selectedForm.linkName,
     payload:   { data: zohoRecord },
   };
-  // Include app_name for cross-app or when we have it from init()
-  if (S.appLinkName) config.app_name = S.appLinkName;
 
   let response;
   try {
     response = await ZOHO.CREATOR.DATA.addRecords(config);
   } catch (sdkErr) {
-    // SDK threw (network error, permission denied, etc.)
     throw new Error(sdkErr?.message || 'SDK error during insert');
   }
 
-  // V2 API uses numeric codes: 3000 = success, anything else = error
+  // V2: code 3000 = success; anything else = API-level error
   if (!response || response.code !== 3000) {
-    const msg = response?.message || `Insert failed (code: ${response?.code ?? 'unknown'})`;
-    throw new Error(msg);
+    throw new Error(response?.message || `Insert failed (code: ${response?.code ?? 'unknown'})`);
   }
 
   return response;
@@ -689,7 +684,7 @@ function updateProgress(current, total, label, success, failed) {
 
 function showResults() {
   const { total, success, failed, failedList, insertedIds } = S.importResults;
-  const isDemo = !S.appLinkName || S.appLinkName === '__dev__' || typeof ZOHO === 'undefined';
+  const isDemo = !isInsideCreator();
 
   document.getElementById('importProgress').style.display = 'none';
   document.getElementById('importResults').style.display  = 'block';
