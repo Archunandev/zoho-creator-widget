@@ -413,9 +413,8 @@ function cellHtml(ri, header, value) {
 /* ---- Cell editing ---- */
 function onCellInput(ri, header, input) {
   // Sync to S.tableData on EVERY keystroke — do not wait for blur (onchange).
-  // Without this, clicking Import or Validate All before blurring a cell
-  // would read the old value from state instead of what's visible on screen.
   S.tableData[ri][header] = input.value.trim();
+  hidePreImportBar(); // data changed; dismiss stale pre-import warning
 
   const lnk  = S.mapping[header];
   const field = lnk ? S.selectedForm.fields.find(f => f.linkName === lnk) : null;
@@ -770,6 +769,7 @@ function deleteSelectedRows() {
   S.rowStatus   = {};
   S.selectedRows = new Set();
   S.page         = 0;
+  hidePreImportBar();
   validateAll();
   toast(`Deleted ${toRemove.length} row${toRemove.length > 1 ? 's' : ''}`, 'ok');
 }
@@ -777,27 +777,104 @@ function deleteSelectedRows() {
 /* =================================================================
    IMPORT
    ================================================================= */
+/* Phase 1 — validate and show results in the table; wait for user to confirm */
 async function startImport() {
-  // Always run a fresh full validation pass before import
-  validateAll();
+  validateAll(); // flush DOM edits + run validation + re-render table
 
-  // Guard: required columns must be mapped (button should already be disabled, this is a safety net)
+  // Guard: required columns must be mapped
   const missingRequired = S.selectedForm.fields
     .filter(f => f.required && !Object.values(S.mapping).includes(f.linkName))
     .map(f => f.label);
   if (missingRequired.length) {
-    toast(`Cannot import — required fields missing from file: ${missingRequired.join(', ')}`, 'err');
+    toast(`Cannot import — required fields missing: ${missingRequired.join(', ')}`, 'err');
     return;
   }
 
-  // Count rows with validation errors
   const errorRowIndices = new Set(
     Object.entries(S.rowErrors)
       .filter(([, e]) => Object.keys(e).length > 0)
       .map(([ri]) => Number(ri))
   );
+  const validCount = S.tableData.length - errorRowIndices.size;
 
-  // Build Zoho-field-keyed records, skipping any row with validation errors
+  if (errorRowIndices.size > 0) {
+    if (validCount === 0) {
+      // Every row has an error — nothing to import
+      toast(`All ${S.tableData.length} rows have validation errors — fix them before importing.`, 'err');
+      scrollToFirstError();
+      return;
+    }
+    // Some rows have errors — show the warning bar and wait for the user to decide
+    showPreImportBar(errorRowIndices.size, validCount);
+    scrollToFirstError();
+    return;
+  }
+
+  // All rows valid — import immediately
+  await runImport(errorRowIndices);
+}
+
+/* Called by the "Skip & Import" button in the pre-import warning bar */
+async function confirmSkipAndImport() {
+  hidePreImportBar();
+  const errorRowIndices = new Set(
+    Object.entries(S.rowErrors)
+      .filter(([, e]) => Object.keys(e).length > 0)
+      .map(([ri]) => Number(ri))
+  );
+  await runImport(errorRowIndices);
+}
+
+function showPreImportBar(errorCount, validCount) {
+  const bar = document.getElementById('preImportBar');
+  bar.innerHTML = `
+    <span class="pib-icon">&#9888;</span>
+    <span class="pib-msg">
+      <strong>${errorCount} row${errorCount > 1 ? 's' : ''} have validation errors</strong>
+      — highlighted in red below. Fix them, or skip and import the
+      <strong>${validCount}</strong> valid record${validCount > 1 ? 's' : ''}.
+    </span>
+    <span class="pib-actions">
+      <button class="btn-secondary btn-sm" onclick="hidePreImportBar()">&#9998; Fix errors</button>
+      <button class="btn-import btn-sm pib-confirm" onclick="confirmSkipAndImport()">
+        Skip ${errorCount} &amp; import ${validCount}
+      </button>
+    </span>
+  `;
+  bar.style.display = 'flex';
+}
+
+function hidePreImportBar() {
+  const bar = document.getElementById('preImportBar');
+  if (bar) bar.style.display = 'none';
+}
+
+function scrollToFirstError() {
+  const firstRi = Object.entries(S.rowErrors)
+    .filter(([, e]) => Object.keys(e).length > 0)
+    .map(([ri]) => Number(ri))
+    .sort((a, b) => a - b)[0];
+  if (firstRi === undefined) return;
+
+  // Navigate to the page containing the first error
+  const targetPage = Math.floor(firstRi / S.pageSize);
+  if (S.page !== targetPage) {
+    S.page = targetPage;
+    renderDataTable();
+  }
+
+  requestAnimationFrame(() => {
+    const row = document.getElementById(`row-${firstRi}`);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('row-flash');
+      setTimeout(() => row.classList.remove('row-flash'), 1200);
+    }
+  });
+}
+
+/* Phase 2 — the actual import loop */
+async function runImport(errorRowIndices) {
   const toImport = S.tableData
     .map((rawRecord, ri) => {
       const zohoRecord = {};
@@ -806,7 +883,6 @@ async function startImport() {
         if (!lnk) return;
         const field = S.selectedForm.fields.find(f => f.linkName === lnk);
         let val = rawRecord[h] ?? '';
-        // Ensure date fields are always in DD-MMM-YYYY when sent to Creator API
         if (field?.type === 'date' && val) val = parseAndFormatDate(val) || val;
         zohoRecord[lnk] = val;
       });
@@ -815,20 +891,8 @@ async function startImport() {
     .filter(({ ri }) => !errorRowIndices.has(ri));
 
   if (!toImport.length) {
-    toast(
-      errorRowIndices.size > 0
-        ? `All ${S.tableData.length} rows have validation errors — fix them before importing.`
-        : 'No data to import.',
-      'err'
-    );
+    toast('No valid records to import.', 'err');
     return;
-  }
-
-  if (errorRowIndices.size > 0) {
-    toast(
-      `${errorRowIndices.size} row${errorRowIndices.size > 1 ? 's' : ''} with errors will be skipped — importing ${toImport.length} valid record${toImport.length > 1 ? 's' : ''}.`,
-      'warn'
-    );
   }
 
   goToStep(4);
@@ -838,8 +902,8 @@ async function startImport() {
 
   const total = toImport.length;
   let success = 0, failed = 0;
-  const failedList    = [];
-  const insertedIds   = [];
+  const failedList  = [];
+  const insertedIds = [];
 
   for (let i = 0; i < toImport.length; i++) {
     const { zohoRecord, rawRecord, ri } = toImport[i];
@@ -849,7 +913,6 @@ async function startImport() {
       const result = await callAddRecord(zohoRecord);
       success++;
       S.rowStatus[ri] = 'success';
-      // V2 response: { code: 3000, data: { ID: "..." }, message: "success" }
       const newId = result?.data?.ID || result?.data?.id || null;
       insertedIds.push({ ri, rowNum: ri + 1, id: newId, rawRecord });
     } catch (err) {
@@ -1143,7 +1206,8 @@ function onEnter(n) {
   if (n === 3) {
     buildTableData();
     buildAutoMapping();
-    normalizeDateFields();  // convert all date columns to DD-MMM-YYYY before display
+    normalizeDateFields();
+    hidePreImportBar();
     validateAll();
     renderImportWarnings();
   }
