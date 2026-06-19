@@ -378,6 +378,11 @@ function onCellChange(ri, header, input) {
     delete S.rowErrors[ri][header];
     input.classList.remove('cell-error');
     input.removeAttribute('title');
+    // Auto-convert date to DD-MMM-YYYY on blur
+    if (field?.type === 'date' && value) {
+      const norm = parseAndFormatDate(value);
+      if (norm && norm !== value) { input.value = norm; S.tableData[ri][header] = norm; }
+    }
   }
 
   updateRowWarning(ri);
@@ -493,6 +498,82 @@ function clearAllErrors() {
   updateValBadge();
 }
 
+/* =================================================================
+   DATE HELPERS
+   ================================================================= */
+const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtDate(dt) {
+  return `${String(dt.getDate()).padStart(2,'0')}-${MONTH_ABBR[dt.getMonth()]}-${dt.getFullYear()}`;
+}
+
+// Accepts any common date format; returns "DD-MMM-YYYY" or null if unparseable.
+function parseAndFormatDate(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+
+  // Already DD-MMM-YYYY (case-insensitive month)
+  const already = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/i.exec(s);
+  if (already) {
+    const mi = MONTH_ABBR.findIndex(m => m.toLowerCase() === already[2].toLowerCase());
+    if (mi >= 0) return `${String(+already[1]).padStart(2,'0')}-${MONTH_ABBR[mi]}-${already[3]}`;
+  }
+
+  let dt;
+
+  // ISO YYYY-MM-DD — local constructor avoids UTC offset shifting the day
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (iso) {
+    dt = new Date(+iso[1], +iso[2] - 1, +iso[3]);
+    if (!isNaN(dt) && dt.getMonth() === +iso[2] - 1) return fmtDate(dt);
+  }
+
+  // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY (European / Indian format)
+  // Also catches MM/DD/YYYY by falling back when month-slot > 12
+  const dmy = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/.exec(s);
+  if (dmy) {
+    const [, a, b, y] = dmy;
+    if (+a > 12) {
+      // First part must be day (DD/MM/YYYY)
+      dt = new Date(+y, +b - 1, +a);
+      if (!isNaN(dt) && dt.getMonth() === +b - 1) return fmtDate(dt);
+    } else if (+b > 12) {
+      // Second part must be day → this is MM/DD/YYYY
+      dt = new Date(+y, +a - 1, +b);
+      if (!isNaN(dt) && dt.getMonth() === +a - 1) return fmtDate(dt);
+    } else {
+      // Ambiguous — default to DD/MM/YYYY (international)
+      dt = new Date(+y, +b - 1, +a);
+      if (!isNaN(dt) && dt.getMonth() === +b - 1) return fmtDate(dt);
+    }
+  }
+
+  // Fallback: let the browser parse ("Jun 15, 2024", "June 15 2024", JS Date.toString(), etc.)
+  const ms = Date.parse(s);
+  if (!isNaN(ms)) return fmtDate(new Date(ms));
+
+  return null;
+}
+
+// After auto-mapping, convert every date field column to DD-MMM-YYYY in tableData
+function normalizeDateFields() {
+  if (!S.selectedForm) return;
+  S.excelHeaders.forEach(header => {
+    const lnk = S.mapping[header];
+    if (!lnk) return;
+    const field = S.selectedForm.fields.find(f => f.linkName === lnk);
+    if (!field || field.type !== 'date') return;
+    S.tableData.forEach(record => {
+      const norm = parseAndFormatDate(record[header] ?? '');
+      if (norm) record[header] = norm;
+    });
+  });
+}
+
+/* =================================================================
+   FIELD VALIDATION
+   ================================================================= */
 function fieldError(field, value) {
   const v = String(value ?? '').trim();
   if (field.required && !v) return `${field.label} is required`;
@@ -506,7 +587,7 @@ function fieldError(field, value) {
       if (isNaN(Number(v.replace(/,/g, '')))) return 'Must be a valid number';
       break;
     case 'date':
-      if (isNaN(Date.parse(v))) return 'Invalid date (use YYYY-MM-DD or MM/DD/YYYY)';
+      if (!parseAndFormatDate(v)) return 'Invalid date — enter as DD-MMM-YYYY (e.g. 15-Jun-2024)';
       break;
     case 'url':
       try { new URL(v); } catch { return 'Invalid URL (include https://)'; }
@@ -623,7 +704,12 @@ async function startImport() {
       const zohoRecord = {};
       S.excelHeaders.forEach(h => {
         const lnk = S.mapping[h];
-        if (lnk) zohoRecord[lnk] = rawRecord[h] ?? '';
+        if (!lnk) return;
+        const field = S.selectedForm.fields.find(f => f.linkName === lnk);
+        let val = rawRecord[h] ?? '';
+        // Ensure date fields are always in DD-MMM-YYYY when sent to Creator API
+        if (field?.type === 'date' && val) val = parseAndFormatDate(val) || val;
+        zohoRecord[lnk] = val;
       });
       return { zohoRecord, rawRecord, ri };
     })
@@ -843,7 +929,7 @@ function downloadTemplate() {
     switch (f.type) {
       case 'email':  return 'user@example.com';
       case 'number': return '100';
-      case 'date':   return new Date().toISOString().split('T')[0];
+      case 'date':   return fmtDate(new Date());
       case 'phone':  return '+1 555-000-0000';
       case 'url':    return 'https://example.com';
       default:       return `Sample ${f.label}`;
@@ -906,10 +992,11 @@ function goToStep(n) {
 
 function onEnter(n) {
   if (n === 3) {
-    buildAutoMapping();
     buildTableData();
-    validateAll();          // validates then renders table
-    renderImportWarnings(); // column-level banner
+    buildAutoMapping();
+    normalizeDateFields();  // convert all date columns to DD-MMM-YYYY before display
+    validateAll();
+    renderImportWarnings();
   }
   if (n === 4) {
     document.getElementById('importProgress').style.display = 'block';
