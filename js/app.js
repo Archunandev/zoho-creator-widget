@@ -1,4 +1,11 @@
 /* =================================================================
+   CONSTANTS
+   ================================================================= */
+const MAX_ROWS    = 20000; // hard cap on uploadable rows
+const BATCH_SIZE  = 200;   // rows per batch (Creator UI grouping)
+const CONCURRENCY = 5;     // parallel API calls within each batch
+
+/* =================================================================
    STATE
    ================================================================= */
 const S = {
@@ -162,11 +169,20 @@ function loadSheet(sheetName) {
   S.excelHeaders = raw[0].map(h => String(h).trim()).filter(h => h);
   S.rawRows = raw.slice(1).filter(row => row.some(c => String(c).trim() !== ''));
 
+  if (S.rawRows.length > MAX_ROWS) {
+    toast(`File has ${S.rawRows.length.toLocaleString()} rows — maximum is ${MAX_ROWS.toLocaleString()}. Please split the file and re-upload.`, 'err');
+    S.rawRows = [];
+    S.excelHeaders = [];
+    document.getElementById('filePreview').style.display = 'none';
+    return;
+  }
+
+  const batches = Math.ceil(S.rawRows.length / BATCH_SIZE);
   const preview = document.getElementById('filePreview');
   const meta = preview.querySelector('.file-meta');
-  if (meta) meta.textContent = `${S.rawRows.length} records • Sheet: ${sheetName}`;
+  if (meta) meta.textContent = `${S.rawRows.length.toLocaleString()} records • ${batches} batch${batches > 1 ? 'es' : ''} • Sheet: ${sheetName}`;
 
-  toast(`Loaded ${S.rawRows.length} records from "${sheetName}"`, 'ok');
+  toast(`Loaded ${S.rawRows.length.toLocaleString()} records from "${sheetName}"`, 'ok');
 }
 
 function showFilePreview(file) {
@@ -903,7 +919,7 @@ function scrollToFirstError() {
   });
 }
 
-/* Phase 2 — the actual import loop */
+/* Phase 2 — batch import loop */
 async function runImport(errorRowIndices) {
   const toImport = S.tableData
     .map((rawRecord, ri) => {
@@ -926,42 +942,177 @@ async function runImport(errorRowIndices) {
   }
 
   goToStep(4);
-
   S.isImporting = true;
   document.getElementById('btnImport').disabled = true;
 
-  const total = toImport.length;
-  let success = 0, failed = 0;
-  const failedList  = [];
-  const insertedIds = [];
+  const batches    = chunkArray(toImport, BATCH_SIZE);
+  const grandTotal = toImport.length;
 
-  for (let i = 0; i < toImport.length; i++) {
-    const { zohoRecord, rawRecord, ri } = toImport[i];
-    updateProgress(i + 1, total, `Inserting record ${i + 1} of ${total}…`, success, failed);
+  // Per-batch live state (drives the progress table)
+  const batchState = batches.map((b, i) => ({
+    idx: i + 1, total: b.length,
+    inserted: 0, failed: 0,
+    status: 'pending', // 'pending' | 'running' | 'done'
+  }));
 
-    try {
-      const result = await callAddRecord(zohoRecord);
-      success++;
-      S.rowStatus[ri] = 'success';
-      const newId = result?.data?.ID || result?.data?.id || null;
-      insertedIds.push({ ri, rowNum: ri + 1, id: newId, rawRecord });
-    } catch (err) {
-      failed++;
-      S.rowStatus[ri] = 'failed';
-      failedList.push({
-        rowNum: ri + 1,
-        rawRecord,
-        error: String(err?.message || err || 'Unknown error'),
-      });
+  const ctx = {
+    totalInserted: 0, totalFailed: 0,
+    startMs: null,
+    allInsertedIds: [], allFailedList: [],
+  };
+
+  renderBatchProgress(batchState, ctx, grandTotal);
+
+  for (let bi = 0; bi < batches.length; bi++) {
+    if (bi === 0) ctx.startMs = Date.now(); // start clock on first actual work
+    batchState[bi].status = 'running';
+    renderBatchProgress(batchState, ctx, grandTotal);
+
+    const batch = batches[bi];
+
+    // Process the batch in concurrent sub-groups of CONCURRENCY
+    for (let ci = 0; ci < batch.length; ci += CONCURRENCY) {
+      const group = batch.slice(ci, ci + CONCURRENCY);
+
+      // Wrap each call so allSettled always resolves (never rejects)
+      const results = await Promise.allSettled(
+        group.map(async ({ zohoRecord, rawRecord, ri }) => {
+          try {
+            const result = await callAddRecord(zohoRecord);
+            return { ok: true, result, rawRecord, ri };
+          } catch (err) {
+            return { ok: false, err, rawRecord, ri };
+          }
+        })
+      );
+
+      for (const settled of results) {
+        const { ok, result, err, rawRecord, ri } = settled.value;
+        if (ok) {
+          ctx.totalInserted++;
+          batchState[bi].inserted++;
+          S.rowStatus[ri] = 'success';
+          const newId = result?.data?.ID || result?.data?.id || null;
+          ctx.allInsertedIds.push({ ri, rowNum: ri + 1, id: newId, rawRecord });
+        } else {
+          ctx.totalFailed++;
+          batchState[bi].failed++;
+          S.rowStatus[ri] = 'failed';
+          ctx.allFailedList.push({
+            rowNum: ri + 1, rawRecord,
+            error: String(err?.message || err || 'Unknown error'),
+          });
+        }
+      }
+      renderBatchProgress(batchState, ctx, grandTotal);
     }
 
-    // Respect Creator API rate limits (~10 req/sec safe)
-    await sleep(120);
+    batchState[bi].status = 'done';
+    renderBatchProgress(batchState, ctx, grandTotal);
+
+    // Brief pause between batches so Creator API can breathe
+    if (bi < batches.length - 1) await sleep(400);
   }
 
   S.isImporting   = false;
-  S.importResults = { total, success, failed, failedList, insertedIds };
+  S.importResults = {
+    total:       grandTotal,
+    success:     ctx.totalInserted,
+    failed:      ctx.totalFailed,
+    failedList:  ctx.allFailedList,
+    insertedIds: ctx.allInsertedIds,
+  };
   showResults();
+}
+
+/* ── Batch progress renderer — called after every concurrent group ── */
+function renderBatchProgress(batchState, ctx, grandTotal) {
+  const done   = ctx.totalInserted + ctx.totalFailed;
+  const pct    = grandTotal > 0 ? Math.round((done / grandTotal) * 100) : 0;
+  const etaSec = calcETA(ctx.startMs, done, grandTotal);
+  const etaStr = etaSec !== null ? fmtDuration(etaSec)
+               : (done === 0 ? 'Calculating…' : 'Almost done…');
+
+  const runIdx = batchState.findIndex(b => b.status === 'running');
+  const currentLabel = runIdx >= 0
+    ? `Batch ${runIdx + 1} of ${batchState.length} in progress`
+    : (done >= grandTotal && grandTotal > 0 ? 'Finishing up…' : 'Starting…');
+
+  const rows = batchState.map(b => {
+    const cls   = b.status === 'done' ? 'bt-done' : b.status === 'running' ? 'bt-running' : 'bt-pending';
+    const badge = b.status === 'done'
+      ? `<span class="bt-badge bt-badge-done">&#10003; Done</span>`
+      : b.status === 'running'
+        ? `<span class="bt-badge bt-badge-running"><span class="spin">&#8635;</span> Importing…</span>`
+        : `<span class="bt-badge bt-badge-pending">&#8230; Waiting</span>`;
+    const ins  = b.status === 'pending'
+      ? `<span class="bt-dash">—</span>`
+      : `<span class="bt-ins">${b.inserted}</span>`;
+    const fail = b.status === 'pending'
+      ? `<span class="bt-dash">—</span>`
+      : b.failed > 0
+        ? `<span class="bt-fail">${b.failed}</span>`
+        : `<span class="bt-dash">0</span>`;
+    return `<tr class="${cls}">
+      <td>Batch ${b.idx}</td>
+      <td>${b.total}</td>
+      <td>${ins}</td>
+      <td>${fail}</td>
+      <td>${badge}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('importProgress').innerHTML = `
+    <div class="batch-progress-wrap">
+      <div class="batch-heading">
+        <h3>Importing ${grandTotal.toLocaleString()} record${grandTotal !== 1 ? 's' : ''}</h3>
+        <span class="batch-heading-sub">
+          ${batchState.length} batch${batchState.length !== 1 ? 'es' : ''}
+          &bull; ${CONCURRENCY} parallel calls
+        </span>
+      </div>
+      <div class="batch-bar-row">
+        <div class="batch-bar-track">
+          <div class="batch-bar-fill" style="width:${pct}%"></div>
+        </div>
+        <span class="batch-bar-pct">${pct}%</span>
+      </div>
+      <div class="batch-stats-row">
+        <span class="bstat-ins">&#10003; ${ctx.totalInserted} inserted</span>
+        ${ctx.totalFailed > 0 ? `<span class="bstat-fail">&#10007; ${ctx.totalFailed} failed</span>` : ''}
+        <span class="bstat-current">${currentLabel}</span>
+        <span class="bstat-eta">${etaStr}</span>
+      </div>
+      <div class="batch-table-scroll">
+        <table class="batch-table">
+          <thead>
+            <tr><th>Batch</th><th>Records</th><th>Inserted</th><th>Failed</th><th>Status</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/* ── Batch helpers ── */
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function calcETA(startMs, done, total) {
+  if (!startMs || !done) return null;
+  const elapsed = (Date.now() - startMs) / 1000;
+  return (elapsed / done) * (total - done);
+}
+
+function fmtDuration(secs) {
+  if (secs < 3)  return 'almost done';
+  if (secs < 60) return `~${Math.ceil(secs)}s remaining`;
+  const m = Math.floor(secs / 60), s = Math.ceil(secs % 60);
+  return `~${m}m ${s < 10 ? '0' + s : s}s remaining`;
 }
 
 /* -----------------------------------------------------------------
@@ -1002,15 +1153,6 @@ async function callAddRecord(zohoRecord) {
   return response;
 }
 
-function updateProgress(current, total, label, success, failed) {
-  const pct = Math.round((current / total) * 100);
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressLabel').textContent = label;
-  document.getElementById('progressPct').textContent   = pct + '%';
-  document.getElementById('progressCounts').innerHTML  =
-    `<span style="color:#137333">&#10003; ${success} imported</span>` +
-    `<span style="color:#c5221f">&#10007; ${failed} failed</span>`;
-}
 
 function showResults() {
   const { total, success, failed, failedList, insertedIds } = S.importResults;
@@ -1243,12 +1385,9 @@ function onEnter(n) {
   }
   if (n === 4) {
     document.getElementById('importProgress').style.display = 'block';
+    document.getElementById('importProgress').innerHTML     = '<div class="batch-init-msg">Preparing import…</div>';
     document.getElementById('importResults').style.display  = 'none';
     document.getElementById('importResults').innerHTML      = '';
-    document.getElementById('progressFill').style.width     = '0%';
-    document.getElementById('progressLabel').textContent    = 'Ready to import…';
-    document.getElementById('progressPct').textContent      = '0%';
-    document.getElementById('progressCounts').innerHTML     = '';
   }
 }
 
